@@ -48,13 +48,11 @@ metadata {
  			tileAttribute ("device.switch", key: "PRIMARY_CONTROL") {
  				attributeState "on", label:'${name}', action:"switch.off", icon:"st.lights.philips.hue-single", backgroundColor:"#00A0DC", nextState:"off" 
  				attributeState "off", label:'${name}', action:"switch.on", icon:"st.lights.philips.hue-single", backgroundColor:"#ffffff", nextState:"on" 
-
  			} 
  		
  			tileAttribute ("device.level", key: "SLIDER_CONTROL") {
  				attributeState "level", label: '${lavel.value} %', action:"switch level.setLevel" 
  			}
- 	
  		}
     
     standardTile("refresh", "device.switch", inactiveLabel: false, decoration: "flat", width: 2, height: 2) {
@@ -78,20 +76,17 @@ metadata {
 
 
 def parse(String description) {
-	log.debug "Parsing ..."
+
 	log.debug "Parsing '${description}'"
     
-
-	def result = null
+    def result = null
 
 	if(description){
     
 		def cmd = zwave.parse(description)
 		if (cmd) {
-        
         	log.debug "Comand in Zwave language:  '${cmd}'"
 			result = zwaveEvent(cmd)
-			
 		}	
     }
     
@@ -106,9 +101,7 @@ def zwaveEvent(physicalgraph.zwave.commands.switchmultilevelv3.SwitchMultilevelG
      
      def result = []
      return result
-     
 }
-
 
 
 def zwaveEvent(physicalgraph.zwave.commands.switchmultilevelv3.SwitchMultilevelReport cmd){
@@ -132,8 +125,7 @@ def zwaveEvent(physicalgraph.zwave.commands.switchmultilevelv3.SwitchMultilevelS
 
      log.debug "In SwitchMultilevelSet: 'dimming time: ${cmd.dimmingDuration}' and value:'${cmd.value}'"
      
-  
-     
+	 sendHubCommand(config2())  
      createEvent(name: "level", value : cmd.value)
 }
 
@@ -149,6 +141,7 @@ def zwaveEvent(physicalgraph.zwave.commands.basicv1.BasicSet cmd){
 	} else if (cmd.value == 255) {
 		results << createEvent(name: "switch", value: "on")
 	}else{
+    	results << createEvent(name: "switch", value: "on")
     	results << createEvent(name: "level", value: cmd.value)
     }
     
@@ -169,10 +162,9 @@ def zwaveEvent(physicalgraph.zwave.commands.basicv1.BasicReport cmd){
     
     
     def results = [];
-    if(cmd.value > 2){
+    if(cmd.value > 7){
   		 results << createEvent(name: "level", value: cmd.value)
     }
-    
     
     if(cmd.value == 0){
     	results << createEvent(name: "switch", value: "off")
@@ -187,14 +179,14 @@ def zwaveEvent(physicalgraph.zwave.commands.basicv1.BasicReport cmd){
 
 
 def setLevel(val) {
-	log.debug "Executing 'setLevel' and number}"
+	log.debug "Executing 'setLevel' and 'number'"
 	log.debug "${val}"
     
  
     def results = []
     
     results << sendEvent(name: "level", value: val)
-    results << delayBetween([zwave.basicV1.basicSet(value: val).format(), zwave.basicV1.basicGet().format()], 1000)
+    results << delayBetween([zwave.basicV1.basicSet(value: val).format(), zwave.basicV1.basicGet().format()], 10)
 
 	return results
 }
@@ -258,24 +250,35 @@ def configure(){
 
 	def results = []
 
+	results << config1()
+	results << config2()
+
+    return results
+}
+
+
+def config1(){
+
 	if(DelayedOff){
     
         def str = zwave.configurationV1.configurationSet(configurationValue: [toShort(DelayedOff)], parameterNumber: 1, size: 1).format()
         log.debug "Configuration info: ${str}"
 
-        results << new physicalgraph.device.HubAction(str)
+        return new physicalgraph.device.HubAction(str)
     }
+}
 
+
+
+def config2(){
 
     if(DimmerRampTime){
       
         def str = zwave.configurationV1.configurationSet(configurationValue: [toShort(DimmerRampTime)], parameterNumber: 7, size: 1).format()
         log.debug "Configuration info: ${str}"
 
-        results << new physicalgraph.device.HubAction(str)
+        return new physicalgraph.device.HubAction(str)
      }
-       
-       return results
 }
 
 def toShort(value){
