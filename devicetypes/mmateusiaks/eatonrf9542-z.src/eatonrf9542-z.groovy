@@ -68,6 +68,8 @@ metadata {
     preferences {
     	input name: "DimmerRampTime", type: "Integer", title: "Dimmer ramp time (from 0 to 255)", description: "Enter Value:", required: true,  displayDuringSetup: true, range: "0..255", defaultValue : "10"
         input name: "DelayedOff", type: "Integer", title: "Delayed OFF (from 0 to 255)", description: "Enter Value:", required: true,  displayDuringSetup: true, range: "0..255", defaultValue : "10"
+        input name: "Lockout", type: "enum", title: "Select kind of lockout", description: "Select kind of lockout", required: true, displayDuringSetup: true, options: ["APP_NOT_ACTIVE", "DIMMER_NOT_ACTIVE"]
+        input name: "DisactivationTime", type: "Integer", title: "Seconds of disactivation (from 0 to 255)", description: "Enter Value:", required: true,  displayDuringSetup: true, range: "0..255", defaultValue : "10"
 
 	}
 }
@@ -159,30 +161,29 @@ def zwaveEvent(physicalgraph.zwave.commands.switchmultilevelv3.SwitchMultilevelS
 def zwaveEvent(physicalgraph.zwave.commands.basicv1.BasicReport cmd){
 
 	log.debug "From BasicReport: ${cmd.value}"
-    
-    
+   
     def results = [];
-    if(cmd.value > 7){
-  		 results << createEvent(name: "level", value: cmd.value)
-    }
-    
-    if(cmd.value == 0){
-    	results << createEvent(name: "switch", value: "off")
-    }
-    
-    if(cmd.value == 1){
-    	results << createEvent(name: "switch", value: "on")
-    }
-    
     return results;
 }
 
 
+
+def zwaveEvent(physicalgraph.zwave.commands.protectionv2.ProtectionReport cmd){
+
+	log.debug "ProtectionReport ${cmd}"
+
+
+}
+
+
+def zwaveEvent(physicalgraph.zwave.commands.protectionv2.ProtectionGet cmd){
+	log.debug "ProtectionGet ${cmd}"
+
+}
+
 def setLevel(val) {
-	log.debug "Executing 'setLevel' and 'number'"
-	log.debug "${val}"
+	log.debug "Executing 'setLevel'. Value is : ${val}"
     
- 
     def results = []
     
     results << sendEvent(name: "level", value: val)
@@ -252,11 +253,51 @@ def configure(){
 
 	results << config1()
 	results << config2()
+    results << configChildLockout()
 
     return results
 }
 
 
+
+def configChildLockout(){
+	def results = []
+    
+    log.debug "Rest of child lockout feature"
+
+    def str1 = zwave.protectionV2.protectionSet(localProtectionState: 0).format()
+    def str2 = zwave.protectionV2.protectionSet(rfProtectionState: 0).format()
+
+   // results << new physicalgraph.device.HubAction(str1)
+  //  results << new physicalgraph.device.HubAction(str2)
+
+
+
+    if(Lockout == "APP_NOT_ACTIVE"){
+    
+    	log.debug "APP will be not active"
+    	def str = zwave.protectionV2.protectionSet(rfProtectionState: 1).format()
+        results << new physicalgraph.device.HubAction(str)
+    }
+
+    if(Lockout == "DIMMER_NOT_ACTIVE"){
+        log.debug "Dimmer will be not active"
+        
+        def strTime = zwave.protectionV2.protectionTimeoutSet(timeout: toShort(DisactivationTime)).format()
+   		results << new physicalgraph.device.HubAction(strTime)
+
+        def str = zwave.protectionV2.protectionSet(localProtectionState: 2).format()
+        results << new physicalgraph.device.HubAction(str)
+        
+
+    }
+    
+   log.debug "Disactivation time is : ${DisactivationTime}."
+
+
+
+	results
+}
 def config1(){
 
 	if(DelayedOff){
