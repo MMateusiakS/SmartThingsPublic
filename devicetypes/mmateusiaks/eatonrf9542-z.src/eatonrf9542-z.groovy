@@ -37,6 +37,7 @@ metadata {
 	definition (name: "EatonRF9542-Z", namespace: "MMateusiakS", author: "Malgorzata Mateusiak") {
 		capability "Switch Level"
         capability "Switch"
+        capability "Indicator"
         
         fingerprint inClusters: "0x26, 0x27, 0x75, 0x70, 0x71, 0x85, 0x77, 0x2B, 0x2C, 0x72, 0x73, 0x86, 0x87"
         fingerprint mfr:"001A", prod:"4441", model:"0000"
@@ -55,13 +56,10 @@ metadata {
  			}
  		}
     
-    standardTile("refresh", "device.switch", inactiveLabel: false, decoration: "flat", width: 2, height: 2) {
-			state "refresh", label: "", action:"refresh.refresh", icon:"st.secondary.refresh", defaultState: true
-		}
-    
+
 
     main(["switchM"])
-    details(["switchM", "refresh", "dimmingTime"])
+    details(["switchM", "dimmingTime"])
     
     }
     
@@ -83,16 +81,23 @@ def parse(String description) {
 
 	if(description){
     
-		def cmd = zwave.parse(description)
+		def cmd = zwave.parse(description, [0x75 : 1])
 		if (cmd) {
         	log.debug "Comand in Zwave language:  '${cmd}'"
 			result = zwaveEvent(cmd)
+            log.debug "${description} parsed to ${result.inspect()}"
+
 		}	
     }
     
-	log.debug("'$description' parsed to $result")
 	return result
 
+}
+
+
+def zwaveEvent(physicalgraph.zwave.Command cmd){
+	log.debug "Handling not catched events"
+	return createEvent(descriptionText: "${device.displayName}: ${cmd}")
 }
 
 
@@ -151,9 +156,22 @@ def zwaveEvent(physicalgraph.zwave.commands.basicv1.BasicSet cmd){
 def zwaveEvent(physicalgraph.zwave.commands.switchmultilevelv3.SwitchMultilevelStartLevelChange cmd){
 
     log.debug "From SwitchMultilevelStartLevelChange: ${cmd}"
+    if(cmd.upDown == 1){
     
-    //createEvent(name: "switchLevel", startLevel : cmd.startLevel, dimmingDuration: cmd.dimmingDuration)
-   
+    	def newVal = cmd.startLevel-10
+        if(newVal>0){
+    		setLevel(newVal)
+        }
+    }
+    
+    
+    if(cmd.upDown == 0){
+  		def newVal = cmd.startLevel+10
+        if(newVal<100){
+    		setLevel(newVal)
+        }   
+    }
+
 }
 
 def zwaveEvent(physicalgraph.zwave.commands.basicv1.BasicReport cmd){
@@ -165,14 +183,13 @@ def zwaveEvent(physicalgraph.zwave.commands.basicv1.BasicReport cmd){
 }
 
 
-
-def zwaveEvent(physicalgraph.zwave.commands.protectionv2.ProtectionReport cmd){
-	log.debug "ProtectionReport ${cmd}"
+def zwaveEvent(physicalgraph.zwave.commands.protectionv1.ProtectionGet  cmd){
+	log.debug "From ProtectionGet : ${cmd}"
 }
 
 
-def zwaveEvent(physicalgraph.zwave.commands.protectionv2.ProtectionGet cmd){
-	log.debug "ProtectionGet ${cmd}"
+def zwaveEvent(physicalgraph.zwave.commands.protectionv1.ProtectionReport  cmd){
+	log.debug "From ProtectionReport : ${cmd}"
 }
 
 def setLevel(val) {
@@ -199,11 +216,6 @@ def off(){
 	delayBetween([zwave.basicV1.basicSet(value: 0).format(), zwave.basicV1.basicGet().format()], 10)
 }
 
-def refresh() {
-	log.debug "Executing 'refresh'"
-	zwave.basicV1.basicGet().format()
-}
-
 
 def updated(){
 
@@ -223,13 +235,6 @@ def installed(){
 }
 
 
-def initialize(){
-
-    log.debug "initialize() is being called"
-    def cmds = configure()
-    if (cmds) sendHubCommand(cmds)
-}
-
 def configure(){
 
 	def results = []
@@ -242,22 +247,24 @@ def configure(){
 }
 
 
-
 def configChildLockout(){
 	def results = []
 
     if(Lockout == "DIMMER_ACTIVE"){
     
-    	log.debug "Dimmer will be active"
-    	def str1 = zwave.protectionV2.protectionSet(localProtectionState: 0).format()
+    	def str1 = zwave.protectionV1.protectionSet(protectionState: 0).format()
+        log.debug "Dimmer will be active. ${str1}"
+
         results << new physicalgraph.device.HubAction(str1)
     }
 
     if(Lockout == "DIMMER_NOT_ACTIVE"){
     
-        log.debug "Dimmer will be not active"
-        def str = zwave.protectionV2.protectionSet(localProtectionState: 2).format()
+        def str = zwave.protectionV1.protectionSet(protectionState: 1).format()
+        log.debug "Dimmer will be not active. ${str}"
+
         results << new physicalgraph.device.HubAction(str)
+        
     }
     	
     results
