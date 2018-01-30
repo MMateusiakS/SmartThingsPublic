@@ -68,9 +68,9 @@ metadata {
 }
 
 preferences{
-	input name: "dimmerRampTime", type: "Integer", title: "Dimmer ramp time (from 0 to 255 s)", description: "Enter Value:", 
+	input name: "dimmerRampTime", type: "number", title: "Dimmer ramp time (from 0 to 255 s)", description: "Enter Value:", 
 		required: true,	 displayDuringSetup: true, range: "0..255", defaultValue : 10
-	input name: "delayedOff", type: "Integer", title: "Delayed time to turn off the device (from 0 to 255)", description: "Enter Value:",
+	input name: "delayedOff", type: "number", title: "Delayed time to turn off the device (from 0 to 255)", description: "Enter Value:",
 		required: true,	 displayDuringSetup: true, range: "0..255", defaultValue : 10
 	input name: "lockout", type: "enum", title: "Select kind of lockout", description: "Select kind of lockout", 
 		required: true, displayDuringSetup: true, options: ["DIMMER_ACTIVE", "DIMMER_ENTIRELY_PROTECTED", "DIMMER_PROTECTED_BY_SEQUENCE"]
@@ -290,7 +290,7 @@ def configChildLockout(){
 def configDelayedOff(){
 	log.debug "configuration of time of delay to turn off"
 	if(delayedOff){
-		def str = zwave.configurationV1.configurationSet(configurationValue: [toShort(delayedOff)], parameterNumber: 1, size: 1).format()
+		def str = zwave.configurationV1.configurationSet(configurationValue: [delayedOff], parameterNumber: 1, size: 1).format()
 		log.debug "Delayed to off is: $delayedOff"
 		return new physicalgraph.device.HubAction(str)
 	}
@@ -299,12 +299,8 @@ def configDelayedOff(){
 def configDimmerRampTime(){
 	log.debug "configuration of ramp time"
 	if(dimmerRampTime){
-		def str = zwave.configurationV1.configurationSet(configurationValue: [toShort(dimmerRampTime)], parameterNumber: 7, size: 1).format()
+		def str = zwave.configurationV1.configurationSet(configurationValue: [dimmerRampTime], parameterNumber: 7, size: 1).format()
 		log.debug "Ramp time is: $dimmerRampTime"
 		return new physicalgraph.device.HubAction(str)
 	}
-}
-
-def toShort(value){
-	return Short.parseShort(value.toString())
 }
