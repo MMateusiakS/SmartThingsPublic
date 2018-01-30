@@ -30,13 +30,15 @@ zw:L type:1202 mfr:001A prod:4441 model:0000 ver:3.17 zwv:3.67 lib:03 cc:26,27,7
  *73 -> Powerlevel
  *86 -> Version
  *87 -> Indicator
- */
+ 
+*/
  
  
 metadata {
 	definition (name: "EatonRF9542-Z", namespace: "MMateusiakS", author: "Malgorzata Mateusiak") {
 		capability "Switch Level"
         capability "Switch"
+        capability "Refresh"
         
         fingerprint inClusters: "0x26, 0x27, 0x75, 0x70, 0x71, 0x85, 0x77, 0x2B, 0x2C, 0x72, 0x73, 0x86, 0x87"
         fingerprint mfr:"001A", prod:"4441", model:"0000"
@@ -44,65 +46,65 @@ metadata {
 
 	tiles(size : 2) {
       
-        multiAttributeTile(name:"switchM", type: "lighting", width: 6, height: 4, canChangeIcon: true) { 
+        multiAttributeTile(name:"switch", type: "lighting", width: 6, height: 4, canChangeIcon: true) { 
  			tileAttribute ("device.switch", key: "PRIMARY_CONTROL") {
- 				attributeState "on", label:'${name}', action:"switch.off", icon:"st.lights.philips.hue-single", backgroundColor:"#00A0DC", nextState:"off" 
- 				attributeState "off", label:'${name}', action:"switch.on", icon:"st.lights.philips.hue-single", backgroundColor:"#ffffff", nextState:"on" 
+ 				attributeState "on", label:'${name}', action:"switch.off", icon:"st.switches.switch.on", backgroundColor:"#00A0DC", nextState:"off" 
+ 				attributeState "off", label:'${name}', action:"switch.on", icon:"st.switches.switch.off", backgroundColor:"#ffffff", nextState:"on" 
  			} 
  		
  			tileAttribute ("device.level", key: "SLIDER_CONTROL") {
- 				attributeState "level", label: '${lavel.value} %', action:"switch level.setLevel" 
+ 				attributeState "level", label: '${lavel.value}%', action:"switch level.setLevel", range: "1..100" 
  			}
- 		}
-    
-    standardTile("refresh", "device.switch", inactiveLabel: false, decoration: "flat", width: 2, height: 2) {
-			state "refresh", label: "", action:"refresh.refresh", icon:"st.secondary.refresh", defaultState: true
-		}
+         }
+            
+        standardTile("refresh", "device.switch", inactiveLabel: false, decoration: "flat", width: 2, height: 2, backgroundColor: "#00a0dc") { 
+            state "default", label: '', action: "refresh.refresh", icon: "st.secondary.refresh" 
+ 				 
+ 	}
     
 
-    main(["switchM"])
-    details(["switchM", "refresh", "dimmingTime"])
+    main(["switch"])
+    details(["switch", "refresh"])
     
     }
     
     preferences {
-    	input name: "DimmerRampTime", type: "Integer", title: "Dimmer ramp time (from 0 to 255)", description: "Enter Value:", required: true,  displayDuringSetup: true, range: "0..255", defaultValue : "10"
-        input name: "DelayedOff", type: "Integer", title: "Delayed OFF (from 0 to 255)", description: "Enter Value:", required: true,  displayDuringSetup: true, range: "0..255", defaultValue : "10"
-        input name: "Lockout", type: "enum", title: "Select kind of lockout", description: "Select kind of lockout", required: true, displayDuringSetup: true, options: ["DIMMER_ACTIVE", "DIMMER_NOT_ACTIVE"]
+    	input name: "dimmerRampTime", type: "Integer", title: "Dimmer ramp time (from 0 to 255 s)", description: "Enter Value:", 
+        	required: true,  displayDuringSetup: true, range: "0..255", defaultValue : 10
+        input name: "delayedOff", type: "Integer", title: "Delayed time to turn off the device (from 0 to 255)", description: "Enter Value:",
+        	required: true,  displayDuringSetup: true, range: "0..255", defaultValue : 10
+        input name: "lockout", type: "enum", title: "Select kind of lockout", description: "Select kind of lockout", 
+        	required: true, displayDuringSetup: true, options: ["DIMMER_ACTIVE", "DIMMER_ENTIRELY_PROTECTED", "DIMMER_PROTECTED_BY_SEQUENCE"]
+        input name: "speedOfLevelChange", type: "enum", title: "Select speed of level change:", description: "Select speed of level change", 
+        	required: true, displayDuringSetup: true, options: ["SLOW", "MEDIUM", "FAST"]    
+            
 	}
 }
-
-
 
 
 def parse(String description) {
 
 	log.debug "Parsing '${description}'"
-    
     def result = null
 
 	if(description){
     
-		def cmd = zwave.parse(description)
+		def cmd = zwave.parse(description, [0x75 : 1])
 		if (cmd) {
-        	log.debug "Comand in Zwave language:  '${cmd}'"
+        	log.debug "Comand after Zwave parsing:  '${cmd}'"
 			result = zwaveEvent(cmd)
+            log.debug "${description} parsed to ${result.inspect()}"
 		}	
     }
     
-	log.debug("'$description' parsed to $result")
 	return result
-
 }
 
 
-def zwaveEvent(physicalgraph.zwave.commands.switchmultilevelv3.SwitchMultilevelGet cmd){
-     log.debug "Comand in SwitchMultilevelGet:  '${cmd}'"
-     
-     def result = []
-     return result
+def zwaveEvent(physicalgraph.zwave.Command cmd){
+	log.debug "Handling not catched events"
+	return createEvent(descriptionText: "${device.displayName} : ${cmd}")
 }
-
 
 def zwaveEvent(physicalgraph.zwave.commands.switchmultilevelv3.SwitchMultilevelReport cmd){
 
@@ -117,15 +119,13 @@ def zwaveEvent(physicalgraph.zwave.commands.switchmultilevelv3.SwitchMultilevelR
 		result << createEvent(name: "level", value: cmd.value, unit: "%")
 	}
 	return result
-
 }
-
 
 def zwaveEvent(physicalgraph.zwave.commands.switchmultilevelv3.SwitchMultilevelSet cmd){
 
      log.debug "In SwitchMultilevelSet: 'dimming time: ${cmd.dimmingDuration}' and value:'${cmd.value}'"
      
-	 sendHubCommand(config2())  
+	 sendHubCommand(configDimmerRampTime())  
      createEvent(name: "level", value : cmd.value)
 }
 
@@ -133,8 +133,7 @@ def zwaveEvent(physicalgraph.zwave.commands.switchmultilevelv3.SwitchMultilevelS
 def zwaveEvent(physicalgraph.zwave.commands.basicv1.BasicSet cmd){
 	
     log.debug "From BasicSet: ${cmd}"
-    
-    def results = [];
+    def results = []
     
 	if (cmd.value == 0) {
 		results << createEvent(name: "switch", value: "off")
@@ -152,31 +151,47 @@ def zwaveEvent(physicalgraph.zwave.commands.switchmultilevelv3.SwitchMultilevelS
 
     log.debug "From SwitchMultilevelStartLevelChange: ${cmd}"
     
-    //createEvent(name: "switchLevel", startLevel : cmd.startLevel, dimmingDuration: cmd.dimmingDuration)
-   
+    Short stepOfLevelChange = 5
+    
+    if(speedOfLevelChange == "MEDIUM"){
+    	stepOfLevelChange = 10
+    }
+    
+    if(speedOfLevelChange == "FAST"){
+    	stepOfLevelChange = 15
+    }
+    
+    log.debug "Speed of increasing or decreasing light is ${stepOfLevelChange}"
+    
+    if(cmd.upDown == 1){
+    	log.debug "The action for decreasing the light intensity was done"
+    	def newVal = cmd.startLevel - stepOfLevelChange
+        if(newVal > 3){
+    		setLevel(newVal)
+        }
+    }
+    
+    if(cmd.upDown == 0){
+        log.debug "The action for increasing the light intensity was done"
+  		def newVal = cmd.startLevel + stepOfLevelChange
+        if(newVal < 100){
+    		setLevel(newVal)
+        }   
+    }
 }
 
 def zwaveEvent(physicalgraph.zwave.commands.basicv1.BasicReport cmd){
-
 	log.debug "From BasicReport: ${cmd.value}"
-   
-    def results = [];
-    return results;
+    def results = []
 }
 
 
-
-def zwaveEvent(physicalgraph.zwave.commands.protectionv2.ProtectionReport cmd){
-	log.debug "ProtectionReport ${cmd}"
-}
-
-
-def zwaveEvent(physicalgraph.zwave.commands.protectionv2.ProtectionGet cmd){
-	log.debug "ProtectionGet ${cmd}"
+def zwaveEvent(physicalgraph.zwave.commands.protectionv1.ProtectionReport  cmd){
+	log.debug "From ProtectionReport : ${cmd}"
 }
 
 def setLevel(val) {
-	log.debug "Executing 'setLevel'. Value is : ${val}"
+	log.debug "Executing 'setLevel()'. Value is : ${val}"
     
     def results = []
     
@@ -188,100 +203,109 @@ def setLevel(val) {
 
 
 
+def refresh(){
+	def now = now()
+   	log.debug "Refreshed clicked on ${now}."
+    
+    if(!state.refreshTriggeredAt || (1000 <  now - state.refreshTriggeredAt)){
+    
+    	log.debug "Refresh Triggered state is null or delay is longer that one second"
+		state.refreshTriggeredAt = now
+    	def cmds = [] 
+        cmds << zwave.configurationV1.configurationGet() 
+ 		cmds << zwave.protectionV1.protectionGet() 
+        cmds << zwave.basicV1.basicGet() 
+
+		delayBetween cmds*.format(), 1000
+    }else{
+    	return null
+    }
+}
+
 def on(){
-	log.debug "I am trying to ON"
+	log.debug "Device will be ON."
 	delayBetween([zwave.basicV1.basicSet(value: 0xFF).format(), zwave.basicV1.basicGet().format()], 10)
 }
 
-
 def off(){
-	log.debug "I am trying to OFF"
-	delayBetween([zwave.basicV1.basicSet(value: 0).format(), zwave.basicV1.basicGet().format()], 10)
+	log.debug "Device will be OFF."
+	delayBetween([zwave.basicV1.basicSet(value: 0x00).format(), zwave.basicV1.basicGet().format()], 10)
 }
-
-def refresh() {
-	log.debug "Executing 'refresh'"
-	zwave.basicV1.basicGet().format()
-}
-
 
 def updated(){
-
-    log.debug "updated() is being called"
-    def cmds = configure()
-    if(cmds) sendHubCommand(cmds)
-   
-    log.debug "From updated and sendhub command: ${cmds}"  
+    log.debug "Updated() was called. Device $device.displayName is up-to-date."
+    initialize()
 }
-
 
 def installed(){
-
-	log.debug "installed() is being called"
-    def cmds = configure() 
-    if (cmds) sendHubCommand(cmds)
+	log.debug "Installed() was called. Device $device.displayName is INSTALLED."
+    initialize() 
 }
-
 
 def initialize(){
 
-    log.debug "initialize() is being called"
-    def cmds = configure()
-    if (cmds) sendHubCommand(cmds)
-}
-
-def configure(){
-
 	def results = []
-
-	results << config1()
-	results << config2()
+    results << configCurrentStateOnorOffAndLevelValue()
+	results << configDelayedOff()
+	results << configDimmerRampTime()
     results << configChildLockout()
 
-    return results
+	sendHubCommand(results)
 }
 
+def configCurrentStateOnorOffAndLevelValue(){
+	//get data from device to update
 
+	def cmds = []
+	cmds << zwave.switchMultilevelV1.switchMultilevelGet()
+    cmds << zwave.basicV1.basicGet()
+    cmds << zwave.protectionV1.protectionGet()
+    
+    
+    log.debug "Actual status of device: ${cmds*.format()}"
+    delayBetween cmds*.format()
+}
 
 def configChildLockout(){
+	//configuration to set selected protection mode. 3 modes are possible.
 	def results = []
+    def modeSet
 
-    if(Lockout == "DIMMER_ACTIVE"){
-    
-    	log.debug "Dimmer will be active"
-    	def str1 = zwave.protectionV2.protectionSet(localProtectionState: 0).format()
-        results << new physicalgraph.device.HubAction(str1)
+    if(lockout == "DIMMER_ACTIVE"){
+    	modeSet = zwave.protectionV1.protectionSet(protectionState: 0).format()
+        log.debug "Dimmer will be active. ${modeSet}"
     }
 
-    if(Lockout == "DIMMER_NOT_ACTIVE"){
-    
-        log.debug "Dimmer will be not active"
-        def str = zwave.protectionV2.protectionSet(localProtectionState: 2).format()
-        results << new physicalgraph.device.HubAction(str)
+    if(lockout == "DIMMER_PROTECTED_BY_SEQUENCE"){
+        modeSet = zwave.protectionV1.protectionSet(protectionState: 1).format()
+        log.debug "Dimmer will be active after taping the button 3 times. ${modeSet}"
     }
-    	
-    results
+
+    if(lockout == "DIMMER_ENTIRELY_PROTECTED"){
+        modeSet = zwave.protectionV1.protectionSet(protectionState: 2).format()
+        log.debug "Dimmer will be not active. ${modeSet}"
+    }
+
+    results << new physicalgraph.device.HubAction(modeSet)
 }
 
 
-def config1(){
-
-	if(DelayedOff){
-    
-        def str = zwave.configurationV1.configurationSet(configurationValue: [toShort(DelayedOff)], parameterNumber: 1, size: 1).format()
-        log.debug "Configuration info: ${str}"
+def configDelayedOff(){
+	log.debug "configuration of time of delay to turn off"
+	if(delayedOff){
+        def str = zwave.configurationV1.configurationSet(configurationValue: [toShort(delayedOff)], parameterNumber: 1, size: 1).format()
+        log.debug "Delayed to off is: $delayedOff"
 
         return new physicalgraph.device.HubAction(str)
     }
 }
 
-
-def config2(){
-
-    if(DimmerRampTime){
+def configDimmerRampTime(){
+	log.debug "configuration of ramp time"
+    if(dimmerRampTime){
       
-        def str = zwave.configurationV1.configurationSet(configurationValue: [toShort(DimmerRampTime)], parameterNumber: 7, size: 1).format()
-        log.debug "Configuration info: ${str}"
+        def str = zwave.configurationV1.configurationSet(configurationValue: [toShort(dimmerRampTime)], parameterNumber: 7, size: 1).format()
+        log.debug "Ramp time is: $dimmerRampTime"
 
         return new physicalgraph.device.HubAction(str)
      }
