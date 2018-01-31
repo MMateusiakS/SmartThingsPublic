@@ -84,6 +84,7 @@ def parse(String description) {
 	log.debug "Parsing ${description}"
 	def result = null
 
+
 	if(description){
 
 		def cmd = zwave.parse(description, [0x75 : 1])
@@ -106,30 +107,25 @@ def zwaveEvent(physicalgraph.zwave.Command cmd){
 def zwaveEvent(physicalgraph.zwave.commands.switchmultilevelv3.SwitchMultilevelReport cmd){
 
 	log.debug "In SwitchMultilevelReport: '${cmd}'"
-
-	def result = []
-	def value = (cmd.value ? "on" : "off")
-	def switchEvent = createEvent(name: "switch", value: value, descriptionText: "$device.displayName was turned $value")
-	result << switchEvent
-
-	if (cmd.value) {
-		result << createEvent(name: "level", value: cmd.value, unit: "%")
-	}
-	return result
+	switchPushed(cmd)
 }
 
 def zwaveEvent(physicalgraph.zwave.commands.switchmultilevelv3.SwitchMultilevelSet cmd){
 
 	log.debug "In SwitchMultilevelSet: 'dimming time: ${cmd.dimmingDuration}' and value:'${cmd.value}'"
-
-	sendHubCommand(configDimmerRampTime())	
-	createEvent(name: "level", value : cmd.value)
+	switchPushed(cmd)
 }
 
 
 def zwaveEvent(physicalgraph.zwave.commands.basicv1.BasicSet cmd){
 	
 	log.debug "From BasicSet: ${cmd}"
+	switchPushed(cmd)
+}
+
+
+def switchPushed(cmd){
+
 	def results = []
 
 	if (cmd.value == 0) {
@@ -142,7 +138,9 @@ def zwaveEvent(physicalgraph.zwave.commands.basicv1.BasicSet cmd){
 	}
 
 	return results
+
 }
+
 
 def zwaveEvent(physicalgraph.zwave.commands.switchmultilevelv3.SwitchMultilevelStartLevelChange cmd){
 
@@ -179,7 +177,6 @@ log.debug "From SwitchMultilevelStartLevelChange: ${cmd}"
 
 def zwaveEvent(physicalgraph.zwave.commands.basicv1.BasicReport cmd){
 	log.debug "From BasicReport: ${cmd.value}"
-	def results = []
 }
 
 
@@ -191,42 +188,44 @@ def setLevel(val) {
 	log.debug "Executing 'setLevel()'. Value is : ${val}"
 
 	def results = []
-
+	results << delayBetween([zwave.basicV1.basicSet(value: val).format(), zwave.basicV1.basicGet().format()], 1000)
 	results << sendEvent(name: "level", value: val)
-	results << delayBetween([zwave.basicV1.basicSet(value: val).format(), zwave.basicV1.basicGet().format()], 10)
 
+	refresh()
+    
 	return results
 }
 
 
-
 def refresh(){
-	def now = now()
-	log.debug "Refreshed clicked on ${now}."
 
-	if(!state.refreshTriggeredAt || (1000 <	 now - state.refreshTriggeredAt)){
+	log.debug "Refreshed clicked"
+    def cmds = [] 
+    cmds << zwave.configurationV1.configurationGet() 
+    cmds << zwave.protectionV1.protectionGet() 
+    cmds << zwave.basicV1.basicGet()
+    cmds << zwave.switchMultilevelV1.switchMultilevelGet()
 
-	log.debug "Refresh Triggered state is null or delay is longer that one second"
-	state.refreshTriggeredAt = now
-	def cmds = [] 
-	cmds << zwave.configurationV1.configurationGet() 
-	cmds << zwave.protectionV1.protectionGet() 
-	cmds << zwave.basicV1.basicGet() 
-
-	delayBetween cmds*.format(), 1000
-	}else{
-		return null
-	}
+    delayBetween cmds*.format(), 1000
+    
 }
 
 def on(){
 	log.debug "Device will be ON."
-	delayBetween([zwave.basicV1.basicSet(value: 0xFF).format(), zwave.basicV1.basicGet().format()], 10)
+    def cmds = []
+    cmds << zwave.basicV1.basicSet(value: 0xFF).format()
+	cmds << zwave.basicV1.basicGet().format()
+
+	delayBetween cmds, 1000
 }
 
 def off(){
 	log.debug "Device will be OFF."
-	delayBetween([zwave.basicV1.basicSet(value: 0x00).format(), zwave.basicV1.basicGet().format()], 10)
+    def cmds = [] 
+	cmds << zwave.basicV1.basicSet(value: 0x00).format()
+	cmds << zwave.basicV1.basicGet().format()
+
+    delayBetween cmds, 1000
 }
 
 def updated(){
@@ -242,25 +241,12 @@ def installed(){
 def initialize(){
 
 	def results = []
-	results << configCurrentStateOnorOffAndLevelValue()
 	results << configDelayedOff()
 	results << configDimmerRampTime()
 	results << configChildLockout()
+    results << refresh()
 
 	sendHubCommand(results)
-}
-
-def configCurrentStateOnorOffAndLevelValue(){
-	//get data from device to update
-
-	def cmds = []
-	cmds << zwave.switchMultilevelV1.switchMultilevelGet()
-	cmds << zwave.basicV1.basicGet()
-	cmds << zwave.protectionV1.protectionGet()
-
-
-	log.debug "Actual status of device: ${cmds*.format()}"
-	delayBetween cmds*.format()
 }
 
 def configChildLockout(){
