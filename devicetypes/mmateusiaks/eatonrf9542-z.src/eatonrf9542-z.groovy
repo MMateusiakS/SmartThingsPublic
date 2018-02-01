@@ -59,26 +59,21 @@ metadata {
 			state "default", label: '', action: "refresh.refresh", icon: "st.secondary.refresh"	 
 		}
 
-
 	main(["switch"])
-	details(["switch", "refresh"])
-
-}
-
-preferences{
-	input name: "dimmerRampTime", type: "number", title: "Dimmer ramp time (from 0 to 255 s)", description: "Enter Value:", 
-		displayDuringSetup: true, range: "0..255"
-	input name: "delayedOff", type: "number", title: "Delayed time to turn off the device (from 0 to 255)", description: "Enter Value:",
-		displayDuringSetup: true, range: "0..255"
-	input name: "lockout", type: "enum", title: "Lockout mode", description: "Select kind of lockout", 
-		required: true, options: ["DIMMER_ACTIVE", "DIMMER_ENTIRELY_PROTECTED", "DIMMER_PROTECTED_BY_SEQUENCE"]
-	input name: "speedOfLevelChange", type: "enum", title: "Select speed of level change:", description: "Select speed of level change", 
-		required: true, options: ["SLOW", "MEDIUM", "FAST"]
+	details(["switch", "refresh"])	
 	}
+
+    preferences{
+        input name: "dimmerRampTime", type: "number", title: "Dimmer ramp time (from 0 to 255 s)", description: "5", 
+            displayDuringSetup: true, range: "0..255"
+        input name: "delayedOff", type: "number", title: "Delayed time to turn off the device (from 0 to 255)", description: "5",
+            displayDuringSetup: true, range: "0..255"
+        input name: "lockout", type: "enum", title: "Lockout mode", description: "Select kind of lockout", 
+            required: true, options: ["DIMMER_ACTIVE", "DIMMER_ENTIRELY_PROTECTED", "DIMMER_PROTECTED_BY_SEQUENCE"]
+    }
 }
 
-def parse(String description) {
-	log.debug "Parsing $description"
+def parse(String description){
 	def result = null
 
 	if(description){
@@ -90,81 +85,46 @@ def parse(String description) {
 	return result
 }
 
-def zwaveEvent(physicalgraph.zwave.Command cmd){
-	log.debug "Handling not caught events $cmd"
-	return createEvent(descriptionText: "$device.displayName : $cmd")
-}
-
 def zwaveEvent(physicalgraph.zwave.commands.switchmultilevelv3.SwitchMultilevelReport cmd){
-	log.debug "In SwitchMultilevelReport: '$cmd'"
+	log.debug "In SwitchMultilevelReport: $cmd"
 	switchPushed(cmd)
 }
 
 def zwaveEvent(physicalgraph.zwave.commands.switchmultilevelv3.SwitchMultilevelSet cmd){
-	log.debug "In SwitchMultilevelSet: 'dimming time: $cmd.dimmingDuration' and value:'$cmd.value'"
+	log.debug "In SwitchMultilevelSet: $cmd"
 	switchPushed(cmd)
 }
 
 def zwaveEvent(physicalgraph.zwave.commands.basicv1.BasicSet cmd){
-	log.debug "From BasicSet: ${cmd}"
+	log.debug "From BasicSet: $cmd"
 	switchPushed(cmd)
 }
 
-
-
 def zwaveEvent(physicalgraph.zwave.commands.switchmultilevelv3.SwitchMultilevelStartLevelChange cmd){
 	log.debug "From SwitchMultilevelStartLevelChange: $cmd"
-
-	Short stepOfLevelChange = 5
-
-	if(speedOfLevelChange == "MEDIUM"){
-		stepOfLevelChange = 10
-	}
-
-	if(speedOfLevelChange == "FAST"){
-		stepOfLevelChange = 15
-	}
-
-	log.debug "Speed of increasing or decreasing light is $stepOfLevelChange"
-
-	if(cmd.upDown == 1){
-		log.debug "The action for decreasing the light intensity was done"
-		def newVal = cmd.startLevel - stepOfLevelChange
-		if(newVal > 3){
-				setLevel(newVal)
-			}
-	}
-
-	if(cmd.upDown == 0){
-		log.debug "The action for increasing the light intensity was done"
-		def newVal = cmd.startLevel + stepOfLevelChange
-		if(newVal < 100){
-			setLevel(newVal)
-		}	
-	}
+    [:]
 }
 
 def zwaveEvent(physicalgraph.zwave.commands.basicv1.BasicReport cmd){
 	log.debug "From BasicReport: $cmd.value"
 }
 
-
-
 def zwaveEvent(physicalgraph.zwave.commands.protectionv1.ProtectionReport  cmd){
-	log.debug "From ProtectionReport : ${cmd}"
+	log.debug "From ProtectionReport: $cmd"
 }
 
 def zwaveEvent(physicalgraph.zwave.commands.configurationv1.ConfigurationReport cmd){
-	log.debug "From configurationReport : ${cmd}"
+	log.debug "From configurationReport: $cmd"
+}
+
+def zwaveEvent(physicalgraph.zwave.Command cmd){
+	log.debug "Handling not caught events: $cmd"
 }
 
 def setLevel(val){
-	log.debug "Executing 'setLevel()'. Value is : $val"
-
+	log.debug "Executing 'setLevel()'. Value is: $val"
 	def results = []
-	results << delayBetween([zwave.basicV1.basicSet(value: val).format(), zwave.switchMultilevelV1.switchMultilevelGet().format()], 1000 + dimmerRampTime * 1000)
-	refresh()
-    
+	results << delayBetween([zwave.basicV1.basicSet(value: val).format(), zwave.switchMultilevelV3.switchMultilevelGet().format()], countTimeAccordingToDimmerRampTime())    
 	return results
 }
 
@@ -175,45 +135,33 @@ def refresh(){
     cmds << zwave.configurationV1.configurationGet(parameterNumber: 3)
     cmds << zwave.configurationV1.configurationGet(parameterNumber: 4)
     cmds << zwave.configurationV1.configurationGet(parameterNumber: 5)
-
     cmds << zwave.configurationV1.configurationGet(parameterNumber: 6)
-
     cmds << zwave.configurationV1.configurationGet(parameterNumber: 7) 
     cmds << zwave.protectionV1.protectionGet() 
-    cmds << zwave.switchMultilevelV1.switchMultilevelGet()
-
+    cmds << zwave.switchMultilevelV3.switchMultilevelGet()
+    cmds << zwave.associationV1.associationGet(groupingIdentifier: 1)
+    
     delayBetween cmds*.format(), 1000
 }
 
 def on(){
-	log.debug "Device will be ON."
-    def cmds = []
-    cmds << zwave.basicV1.basicSet(value: 0xFF)
-	addDelay(cmds)
+	log.debug "Device $device.displayName will be turned ON."
+	turningDeviceOnOffFromApp(0xFF)
 }
 
 def off(){
-	log.debug "Device will be OFF."
-    def cmds = [] 
-	cmds << zwave.basicV1.basicSet(value: 0x00)
-	addDelay(cmds)
-}
-
-def addDelay(cmds){
-	for (int i = 0; i<dimmerRampTime; i++){
-    cmds << zwave.switchMultilevelV1.switchMultilevelGet()
-	}
-    	delayBetween cmds*.format(), 1000
+	log.debug "Device $device.displayName will be turned OFF."
+	turningDeviceOnOffFromApp(0x00)
 }
 
 def updated(){
-	log.debug "Updated() was called. Device $device.displayName is up-to-date."
-	initialize()
+	log.debug "Device $device.displayName is up-to-date."
+    runIn(1, "initialize", [overwrite: true]) 
 }
 
 def installed(){
-	log.debug "Installed() was called. Device $device.displayName is INSTALLED."
-	initialize() 
+	log.debug "Device $device.displayName is INSTALLED."
+    runIn(1, "initialize", [overwrite: true]) 
 }
 
 def initialize(){
@@ -231,20 +179,16 @@ def configChildLockout(){
 	cmds << new physicalgraph.device.HubAction(zwave.protectionV1.protectionSet(protectionState: getMode(lockout)).format())
 }
 
-
 def configDelayedOff(){    
-    settings.delayedOff = settings.delayedOff ? settings.delayedOff : 5
-    def str = zwave.configurationV1.configurationSet(configurationValue: [delayedOff], parameterNumber: 1, size: 1).format()
+    settings.delayedOff = settings.delayedOff != null ? settings.delayedOff : 5
+    def str = zwave.configurationV1.configurationSet(configurationValue: [settings.delayedOff], parameterNumber: 1, size: 1).format()
     return new  physicalgraph.device.HubAction(str)
-    log.debug "Delayed to off is: $delayedOff"
 }
 
 def configDimmerRampTime(){
-    settings.dimmerRampTime = settings.dimmerRampTime ? settings.dimmerRampTime : 5
-	def str = zwave.configurationV1.configurationSet(configurationValue: [dimmerRampTime], parameterNumber: 7, size: 1).format()
+    settings.dimmerRampTime = settings.dimmerRampTime != null ? settings.dimmerRampTime : 5
+	def str = zwave.configurationV1.configurationSet(configurationValue: [settings.dimmerRampTime], parameterNumber: 7, size: 1).format()
 	return new  physicalgraph.device.HubAction(str)
-
-    log.debug "Ramp time is: $dimmerRampTime"
 }
 
 def switchPushed(cmd){
@@ -252,6 +196,7 @@ def switchPushed(cmd){
 
 	if (cmd.value == 0) {
 		results << createEvent(name: "switch", value: "off")
+    	results << createEvent(name: "level", value: 0)
 	} else if (cmd.value == 255) {
 		results << createEvent(name: "switch", value: "on")
 	}else{
@@ -261,7 +206,6 @@ def switchPushed(cmd){
 
 	return results
 }
-
 
 def getMode(String lockout){
 	def modeSet
@@ -273,6 +217,24 @@ def getMode(String lockout){
 	}else if(lockout == "DIMMER_ENTIRELY_PROTECTED"){
     	modeSet = 2
 	}
-    
     return modeSet
+}
+
+def turningDeviceOnOffFromApp(newValue){
+    def cmds = [] 
+	cmds << zwave.basicV1.basicSet(value: newValue)
+	addDelay(cmds)
+}
+
+def addDelay(cmds){
+	def dimmerRampTime = settings.dimmerRampTime != null ? settings.dimmerRampTime : 5
+	for (int i = -1; i < dimmerRampTime; i++){
+    	cmds << zwave.switchMultilevelV3.switchMultilevelGet()
+	}
+    delayBetween cmds*.format(), 1000
+}
+
+def countTimeAccordingToDimmerRampTime(){
+	def dimmerRampTime = settings.dimmerRampTime != null ? settings.dimmerRampTime : 5
+    dimmerRampTime * 1000 + 1000
 }
